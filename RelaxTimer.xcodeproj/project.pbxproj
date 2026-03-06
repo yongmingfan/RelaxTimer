@@ -33,6 +33,11 @@
 			path = RelaxTimer;
 			sourceTree = "<group>";
 		};
+		DD10C5322F5B847000535DA9 /* .github */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = .github;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +55,7 @@
 		DD10C5102F5B72F800535DA9 = {
 			isa = PBXGroup;
 			children = (
+				DD10C5322F5B847000535DA9 /* .github */,
 				DD10C51B2F5B72F800535DA9 /* RelaxTimer */,
 				DD10C51A2F5B72F800535DA9 /* Products */,
 			);
@@ -80,6 +86,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				DD10C51B2F5B72F800535DA9 /* RelaxTimer */,
+				DD10C5322F5B847000535DA9 /* .github */,
 			);
 			name = RelaxTimer;
 			packageProductDependencies = (

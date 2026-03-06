@@ -1,0 +1,56 @@
+name: Build and Release macOS App
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build app
+        run: |
+          xcodebuild \
+          -scheme RelaxTimer \
+          -configuration Release \
+          -derivedDataPath build
+
+      - name: Create release folder
+        run: mkdir release
+
+      - name: Compress app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+          build/Build/Products/Release/RelaxTimer.app \
+          release/RelaxTimer.zip
+
+      - name: Prepare Pages content
+        run: |
+          mkdir pages
+          mv release/RelaxTimer.zip pages/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
