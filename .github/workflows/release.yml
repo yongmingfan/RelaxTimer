@@ -42,9 +42,10 @@ jobs:
 
       - name: Download Sparkle tools
         run: |
-          curl -L https://github.com/sparkle-project/Sparkle/releases/latest/download/Sparkle.tar.xz -o sparkle.tar.xz
-          tar -xf sparkle.tar.xz
-          echo "SPARKLE_TOOLS_DIR=$(pwd)/Sparkle" >> $GITHUB_ENV
+          git clone --depth 1 https://github.com/sparkle-project/Sparkle.git
+          cd Sparkle
+          make sparkle-cli
+          echo "SPARKLE_TOOLS_DIR=$(pwd)/bin" >> $GITHUB_ENV
 
       - name: Export Sparkle private key to file
         run: |
