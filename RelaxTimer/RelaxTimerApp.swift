@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct RelaxTimerApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // No WindowGroup => no main interface
+        Settings {
+            EmptyView()
         }
     }
 }

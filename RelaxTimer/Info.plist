@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://yongmingfan.github.io/RelaxTimer/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>cAAIEOz3vL4MgduAInf0tRwPn/6g8guyd3yPTeT+s/A=</string>
+</dict>
+</plist>
