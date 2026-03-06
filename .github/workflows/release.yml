@@ -21,6 +21,7 @@ jobs:
     env:
       APP_NAME: RelaxTimer
       SCHEME: RelaxTimer
+      SPARKLE_VERSION: 2.9.0
 
     steps:
       - name: Checkout repository
@@ -40,13 +41,13 @@ jobs:
             -derivedDataPath build \
             build
 
-      - name: Download Sparkle tools
+      - name: Setup Sparkle tools
         run: |
-          git clone --depth 1 https://github.com/sparkle-project/Sparkle.git
-          cd Sparkle
-          make sparkle-cli
-          make generate_appcast
-          echo "SPARKLE_TOOLS_DIR=$(pwd)/bin" >> $GITHUB_ENV
+          mkdir -p .action/sparkle
+          cd .action/sparkle
+          curl -L "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-for-Swift-Package-Manager.zip" -o sparkle.zip
+          unzip -q sparkle.zip
+          echo "$(pwd)/bin" >> "$GITHUB_PATH"
 
       - name: Export Sparkle private key to file
         run: |
@@ -64,13 +65,9 @@ jobs:
 
       - name: Generate appcast
         run: |
-          "$SPARKLE_TOOLS_DIR/generate_appcast" \
+          generate_appcast \
             --ed-key-file "$SPARKLE_PRIVATE_KEY_FILE" \
             updates
-
-      - name: Add latest alias page content
-        run: |
-          cp "updates/appcast.xml" "updates/appcast.xml"
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
