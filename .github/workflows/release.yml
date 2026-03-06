@@ -63,7 +63,7 @@ jobs:
 
       - name: Generate appcast
         run: |
-          "$SPARKLE_TOOLS_DIR/bin/generate_appcast" \
+          "$SPARKLE_TOOLS_DIR/generate_appcast" \
             --ed-key-file "$SPARKLE_PRIVATE_KEY_FILE" \
             updates
 
