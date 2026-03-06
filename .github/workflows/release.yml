@@ -40,13 +40,11 @@ jobs:
             -derivedDataPath build \
             build
 
-      - name: Prepare Sparkle tools
+      - name: Download Sparkle tools
         run: |
-          TOOLS_DIR="$RUNNER_TEMP/sparkle-tools"
-          mkdir -p "$TOOLS_DIR"
-          cp -R "$HOME/Library/Developer/Xcode/DerivedData"/*/SourcePackages/artifacts/sparkle/Sparkle/* "$TOOLS_DIR"/
-          chmod +x "$TOOLS_DIR/bin/"*
-          echo "SPARKLE_TOOLS_DIR=$TOOLS_DIR" >> "$GITHUB_ENV"
+          curl -L https://github.com/sparkle-project/Sparkle/releases/latest/download/Sparkle.tar.xz -o sparkle.tar.xz
+          tar -xf sparkle.tar.xz
+          echo "SPARKLE_TOOLS_DIR=$(pwd)/Sparkle" >> $GITHUB_ENV
 
       - name: Export Sparkle private key to file
         run: |
