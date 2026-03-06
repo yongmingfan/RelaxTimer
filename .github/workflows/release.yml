@@ -45,6 +45,7 @@ jobs:
           git clone --depth 1 https://github.com/sparkle-project/Sparkle.git
           cd Sparkle
           make sparkle-cli
+          make generate_appcast
           echo "SPARKLE_TOOLS_DIR=$(pwd)/bin" >> $GITHUB_ENV
 
       - name: Export Sparkle private key to file
