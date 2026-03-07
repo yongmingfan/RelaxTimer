@@ -2,6 +2,51 @@ import Cocoa
 import SwiftUI
 import Sparkle
 
+enum RelaxColorPreset: Int, CaseIterable {
+    case currentDark = 0
+    case sageGreen = 1
+    case warmAmber = 2
+    case softBlue = 3
+
+    var menuTitle: String {
+        switch self {
+        case .currentDark:
+            return "Midnight"
+        case .sageGreen:
+            return "Forest"
+        case .warmAmber:
+            return "Amber"
+        case .softBlue:
+            return "Ocean"
+        }
+    }
+
+    var gradientColors: [Color] {
+        switch self {
+        case .currentDark:
+            return [
+                Color(red: 46/255, green: 46/255, blue: 46/255),
+                Color(red: 32/255, green: 32/255, blue: 32/255)
+            ]
+        case .sageGreen:
+            return [
+                Color(red: 70/255, green: 88/255, blue: 78/255),
+                Color(red: 45/255, green: 60/255, blue: 53/255)
+            ]
+        case .warmAmber:
+            return [
+                Color(red: 92/255, green: 76/255, blue: 55/255),
+                Color(red: 64/255, green: 51/255, blue: 38/255)
+            ]
+        case .softBlue:
+            return [
+                Color(red: 67/255, green: 82/255, blue: 97/255),
+                Color(red: 42/255, green: 54/255, blue: 66/255)
+            ]
+        }
+    }
+}
+
 // MARK: - AppDelegate (Menu bar app)
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpdaterDelegate {
@@ -14,20 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
 
     private let intervalMenuItem = NSMenuItem(title: "Set Count Down", action: nil, keyEquivalent: "")
     private let breakMenuItem = NSMenuItem(title: "Set Break Time", action: nil, keyEquivalent: "")
+    private let relaxColorMenuItem = NSMenuItem(title: "Set Relax Color", action: nil, keyEquivalent: "")
 
     private let pauseResumeItem = NSMenuItem(title: "Pause", action: nil, keyEquivalent: "")
     private let resetItem = NSMenuItem(title: "Reset", action: nil, keyEquivalent: "")
     private let showNowItem = NSMenuItem(title: "Relax Now", action: nil, keyEquivalent: "")
 
-    // NEW: update item (Latest / Update Now)
     private let updateItem = NSMenuItem(title: "Latest", action: nil, keyEquivalent: "")
 
     private let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "")
 
-    // If user manually paused, we should NOT auto-resume on unlock
     private var wasPausedByLockEvent: Bool = false
 
-    // Sparkle updater (embedded in your app)
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: false,
         updaterDelegate: self,
@@ -38,21 +81,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     private var updateAvailable: Bool = false
 
     func menuWillOpen(_ menu: NSMenu) {
-        // Always refresh states right before showing the dropdown
         refreshCheckmarks()
         refreshPauseResumeTitle()
     }
 
-    // We manually control enabled/disabled (grey + not clickable)
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        // When paused, disable Reset and Relax Now (grey + not clickable)
         if menuItem === resetItem { return !scheduler.isPaused }
         if menuItem === showNowItem { return !scheduler.isPaused }
-
-        // Update button: only clickable when update exists
         if menuItem === updateItem { return updateAvailable }
-
-        // Everything else stays enabled
         return true
     }
 
@@ -72,11 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
 
         scheduler.start()
 
-        // Start Sparkle updater
         _ = updaterController
         try? updaterController.updater.start()
 
-        // Auto check for updates (silent)
         startAutoUpdateChecks()
     }
 
@@ -86,7 +120,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // SF Symbols eye icon
             button.image = NSImage(systemSymbolName: "eye", accessibilityDescription: "RelaxTimer")
             button.imagePosition = .imageLeft
             button.title = " 20:00"
@@ -99,8 +132,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         guard let button = statusItem.button else { return }
 
         let text = " \(display)"
-
-        // Monospaced digits so the eye doesn't shift during 20:00 -> 19:59, etc.
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
 
@@ -110,7 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     // MARK: - Menu
 
     private func setupMenu() {
-        // Interval submenu
         let intervalSubmenu = NSMenu()
         for m in RelaxScheduler.allowedIntervalMinutes {
             let item = NSMenuItem(title: "\(m) minutes", action: #selector(setInterval(_:)), keyEquivalent: "")
@@ -120,7 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         }
         intervalMenuItem.submenu = intervalSubmenu
 
-        // Break duration submenu
         let breakSubmenu = NSMenu()
         for s in RelaxScheduler.allowedRelaxSeconds {
             let item = NSMenuItem(title: "\(s) seconds", action: #selector(setBreak(_:)), keyEquivalent: "")
@@ -129,6 +158,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
             breakSubmenu.addItem(item)
         }
         breakMenuItem.submenu = breakSubmenu
+
+        let colorSubmenu = NSMenu()
+        for preset in RelaxColorPreset.allCases {
+            let item = NSMenuItem(title: preset.menuTitle, action: #selector(setRelaxColor(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = preset.rawValue
+            colorSubmenu.addItem(item)
+        }
+        relaxColorMenuItem.submenu = colorSubmenu
 
         pauseResumeItem.target = self
         pauseResumeItem.action = #selector(togglePauseResume(_:))
@@ -139,7 +177,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         showNowItem.target = self
         showNowItem.action = #selector(showNow(_:))
 
-        // Update item target/action
         updateItem.target = self
         updateItem.action = #selector(updateNow(_:))
         updateItem.title = "Latest"
@@ -155,15 +192,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
 
         menu.addItem(intervalMenuItem)
         menu.addItem(breakMenuItem)
+        menu.addItem(relaxColorMenuItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(pauseResumeItem)
         menu.addItem(resetItem)
         menu.addItem(showNowItem)
-
-        // NEW section line between Relax Now and Update button
         menu.addItem(NSMenuItem.separator())
         menu.addItem(updateItem)
-
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
@@ -179,23 +214,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
                 item.state = (item.tag == scheduler.intervalMinutes) ? .on : .off
             }
         }
+
         if let breakSubmenu = breakMenuItem.submenu {
             for item in breakSubmenu.items {
                 item.state = (item.tag == scheduler.relaxSeconds) ? .on : .off
+            }
+        }
+
+        if let colorSubmenu = relaxColorMenuItem.submenu {
+            for item in colorSubmenu.items {
+                item.state = (item.tag == scheduler.relaxColorPreset.rawValue) ? .on : .off
             }
         }
     }
 
     private func refreshPauseResumeTitle() {
         pauseResumeItem.title = scheduler.isPaused ? "Resume" : "Pause"
-
-        // When paused, disable Reset and Relax Now (greyed out)
         resetItem.isEnabled = !scheduler.isPaused
         showNowItem.isEnabled = !scheduler.isPaused
     }
 
     private func refreshEnabledStates() {
-        // Requirement: when paused, make Reset and Relax Now unavailable
         resetItem.isEnabled = !scheduler.isPaused
         showNowItem.isEnabled = !scheduler.isPaused
     }
@@ -214,17 +253,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     // MARK: - Menu actions
 
     @objc private func setInterval(_ sender: NSMenuItem) {
-        scheduler.setIntervalMinutes(sender.tag)   // resets countdown immediately
+        scheduler.setIntervalMinutes(sender.tag)
         refreshCheckmarks()
     }
 
     @objc private func setBreak(_ sender: NSMenuItem) {
-        scheduler.setRelaxSeconds(sender.tag)      // does NOT reset countdown
+        scheduler.setRelaxSeconds(sender.tag)
+        refreshCheckmarks()
+    }
+
+    @objc private func setRelaxColor(_ sender: NSMenuItem) {
+        guard let preset = RelaxColorPreset(rawValue: sender.tag) else { return }
+        scheduler.setRelaxColorPreset(preset)
         refreshCheckmarks()
     }
 
     @objc private func togglePauseResume(_ sender: NSMenuItem) {
-        // Manual toggle: clear lock-paused flag
         wasPausedByLockEvent = false
 
         if scheduler.isPaused {
@@ -248,9 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         scheduler.showNow()
     }
 
-    // NEW: Update button
     @objc private func updateNow(_ sender: NSMenuItem) {
-        // This opens Sparkle UI and performs automatic install/relaunch if an update exists.
         updaterController.updater.checkForUpdates()
     }
 
@@ -261,12 +303,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     // MARK: - Auto update checks (silent)
 
     private func startAutoUpdateChecks() {
-        // First silent check shortly after launch
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             self?.probeForUpdateSilently()
         }
 
-        // Then every 6 hours
         updateProbeTimer?.invalidate()
         updateProbeTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             self?.probeForUpdateSilently()
@@ -277,12 +317,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     }
 
     private func probeForUpdateSilently() {
-        // Sparkle determines update availability via your appcast feed (SUFeedURL in Info.plist).
-        // This performs a background check (no UI).
         updaterController.updater.checkForUpdatesInBackground()
     }
 
-    // MARK: - Sparkle delegate (drives Latest / Update Now)
+    // MARK: - Sparkle delegate
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         updateAvailable = true
@@ -299,7 +337,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        // If feed is missing/misconfigured, treat as no update
         updateAvailable = false
         DispatchQueue.main.async { [weak self] in
             self?.refreshUpdateUI()
@@ -311,7 +348,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     private func observeLockEvents() {
         let workspaceNC = NSWorkspace.shared.notificationCenter
 
-        // This reliably fires when the screen goes to sleep (often when locked)
         workspaceNC.addObserver(
             self,
             selector: #selector(screenDidSleep),
@@ -326,7 +362,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
             object: nil
         )
 
-        // More accurate: actual lock/unlock (distributed notifications)
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(screenLocked),
@@ -343,7 +378,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     }
 
     @objc private func screenDidSleep() {
-        // If already paused by user, don't change flag
         if !scheduler.isPaused {
             wasPausedByLockEvent = true
             scheduler.pause()
@@ -353,7 +387,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     }
 
     @objc private func screenDidWake() {
-        // Wake does not always mean unlocked; unlock handler will resume if needed
     }
 
     @objc private func screenLocked() {
@@ -386,36 +419,35 @@ final class RelaxScheduler {
     static let allowedIntervalMinutes: [Int] = [10, 20, 30]
     static let allowedRelaxSeconds: [Int] = [20, 30, 45, 60]
 
-    // Settings (persisted)
     private(set) var intervalMinutes: Int
     private(set) var relaxSeconds: Int
+    private(set) var relaxColorPreset: RelaxColorPreset
 
     private enum DefaultsKey {
         static let intervalMinutes = "RelaxTimer.intervalMinutes"
         static let relaxSeconds = "RelaxTimer.relaxSeconds"
+        static let relaxColorPreset = "RelaxTimer.relaxColorPreset"
     }
 
-    // State
     private(set) var isPaused: Bool = false
     private var secondsRemaining: Int = 0
     private var timer: Timer?
 
-    // Overlay
     private var overlayWindows: [NSWindow] = []
     private var requestFadeWorkItem: DispatchWorkItem?
     private var finalizeHideWorkItem: DispatchWorkItem?
     private let fadeDuration: TimeInterval = 1
 
-    // Callback to update menu bar title
     var onTick: ((String) -> Void)?
 
     init() {
-        // Defaults are 20 minutes and 20 seconds
         let savedInterval = UserDefaults.standard.object(forKey: DefaultsKey.intervalMinutes) as? Int
         let savedRelax = UserDefaults.standard.object(forKey: DefaultsKey.relaxSeconds) as? Int
+        let savedColorRawValue = UserDefaults.standard.object(forKey: DefaultsKey.relaxColorPreset) as? Int
 
         intervalMinutes = savedInterval ?? 20
         relaxSeconds = savedRelax ?? 20
+        relaxColorPreset = RelaxColorPreset(rawValue: savedColorRawValue ?? RelaxColorPreset.currentDark.rawValue) ?? .currentDark
 
         if !Self.allowedIntervalMinutes.contains(intervalMinutes) { intervalMinutes = 20 }
         if !Self.allowedRelaxSeconds.contains(relaxSeconds) { relaxSeconds = 20 }
@@ -457,16 +489,13 @@ final class RelaxScheduler {
     }
 
     func resetCountdownToFull() {
-        // Reset to full time based on current setting
         secondsRemaining = intervalMinutes * 60
 
         if isPaused {
-            // stay paused, keep showing "Pause"
             tickUI()
             return
         }
 
-        // Restart the timer so it doesn't tick immediately
         stopTimer()
         tickUI()
 
@@ -482,7 +511,6 @@ final class RelaxScheduler {
         intervalMinutes = minutes
         UserDefaults.standard.set(minutes, forKey: DefaultsKey.intervalMinutes)
 
-        // reset timer immediately
         if isPaused {
             secondsRemaining = intervalMinutes * 60
             tickUI()
@@ -494,9 +522,12 @@ final class RelaxScheduler {
     func setRelaxSeconds(_ seconds: Int) {
         relaxSeconds = seconds
         UserDefaults.standard.set(seconds, forKey: DefaultsKey.relaxSeconds)
-
-        // do not reset countdown
         tickUI()
+    }
+
+    func setRelaxColorPreset(_ preset: RelaxColorPreset) {
+        relaxColorPreset = preset
+        UserDefaults.standard.set(preset.rawValue, forKey: DefaultsKey.relaxColorPreset)
     }
 
     func showNow() {
@@ -530,7 +561,7 @@ final class RelaxScheduler {
         timer = nil
     }
 
-    // MARK: - Overlay behavior (fade in/out + quit relax)
+    // MARK: - Overlay behavior
 
     private func cancelOverlayWork() {
         requestFadeWorkItem?.cancel()
@@ -552,13 +583,12 @@ final class RelaxScheduler {
         showOverlay(
             durationSeconds: duration,
             fadeDuration: fadeDuration,
+            preset: relaxColorPreset,
             onQuitRelax: { [weak self] in
                 self?.dismissOverlayWithFadeThenRestart()
             }
         )
 
-        // Do NOT schedule fade here. The view will fade itself when it shows 0.
-        // Only hide after duration + fadeDuration, so the fade has time to finish.
         let finalizeWork = DispatchWorkItem { [weak self] in
             self?.hideOverlay()
             self?.start()
@@ -579,7 +609,7 @@ final class RelaxScheduler {
         DispatchQueue.main.asyncAfter(deadline: .now() + fadeDuration, execute: finalizeWork)
     }
 
-    private func showOverlay(durationSeconds: Int, fadeDuration: TimeInterval, onQuitRelax: @escaping () -> Void) {
+    private func showOverlay(durationSeconds: Int, fadeDuration: TimeInterval, preset: RelaxColorPreset, onQuitRelax: @escaping () -> Void) {
         let screens = NSScreen.screens
         if screens.isEmpty { return }
 
@@ -587,6 +617,7 @@ final class RelaxScheduler {
             let view = RelaxOverlayView(
                 durationSeconds: durationSeconds,
                 fadeDuration: fadeDuration,
+                preset: preset,
                 onQuitRelax: onQuitRelax
             )
 
@@ -619,21 +650,23 @@ final class RelaxScheduler {
     }
 }
 
-// MARK: - Overlay View (no main interface needed)
+// MARK: - Overlay View
 
 struct RelaxOverlayView: View {
 
     let durationSeconds: Int
     let fadeDuration: TimeInterval
+    let preset: RelaxColorPreset
     let onQuitRelax: () -> Void
 
     @State private var secondsLeft: Int
     @State private var overlayOpacity: Double = 0.0
     @State private var didAutoFadeOut: Bool = false
 
-    init(durationSeconds: Int, fadeDuration: TimeInterval, onQuitRelax: @escaping () -> Void) {
+    init(durationSeconds: Int, fadeDuration: TimeInterval, preset: RelaxColorPreset, onQuitRelax: @escaping () -> Void) {
         self.durationSeconds = max(1, durationSeconds)
         self.fadeDuration = max(0.1, fadeDuration)
+        self.preset = preset
         self.onQuitRelax = onQuitRelax
         _secondsLeft = State(initialValue: max(1, durationSeconds))
     }
@@ -654,12 +687,8 @@ struct RelaxOverlayView: View {
             let buttonSize = cardWidth * 0.04
 
             ZStack {
-
                 LinearGradient(
-                    colors: [
-                        Color(red: 46/255, green: 46/255, blue: 46/255),
-                        Color(red: 32/255, green: 32/255, blue: 32/255)
-                    ],
+                    colors: preset.gradientColors,
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -707,7 +736,6 @@ struct RelaxOverlayView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Color.white.opacity(0.18))
                     .foregroundColor(.white)
-
                 }
                 .padding(cardWidth * 0.12)
                 .frame(width: cardWidth)
@@ -725,7 +753,6 @@ struct RelaxOverlayView: View {
         }
         .opacity(overlayOpacity)
         .onAppear {
-
             withAnimation(.easeInOut(duration: fadeDuration)) {
                 overlayOpacity = 1.0
             }
@@ -735,7 +762,6 @@ struct RelaxOverlayView: View {
                     secondsLeft -= 1
                 }
 
-                // Fade ONLY when the UI reaches 0
                 if secondsLeft == 0 && !didAutoFadeOut {
                     didAutoFadeOut = true
                     withAnimation(.easeInOut(duration: fadeDuration)) {
