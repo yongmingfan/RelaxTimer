@@ -1,6 +1,5 @@
 import Cocoa
 import SwiftUI
-import Sparkle
 
 enum RelaxColorPreset: Int, CaseIterable {
     case currentDark = 0
@@ -47,14 +46,116 @@ enum RelaxColorPreset: Int, CaseIterable {
     }
 }
 
+struct LatestReleaseInfo: Decodable {
+    let version: String
+    let build: String
+    let pkg_url: String
+}
+
+final class UpdateManager {
+
+    private let metadataURL = URL(string: "https://yongmingfan.github.io/RelaxTimer/latest.json")!
+
+    func checkForUpdate(completion: @escaping (Result<LatestReleaseInfo?, Error>) -> Void) {
+        let request = URLRequest(url: metadataURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+
+            guard let data = data else {
+                completion(.failure(NSError(domain: "UpdateManager", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "No response data received."
+                ])))
+                return
+            }
+
+            do {
+                let remote = try JSONDecoder().decode(LatestReleaseInfo.self, from: data)
+
+                let localVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+                let localBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+
+                if Self.isRemoteNewer(remoteVersion: remote.version, remoteBuild: remote.build, localVersion: localVersion, localBuild: localBuild) {
+                    completion(.success(remote))
+                } else {
+                    completion(.success(nil))
+                }
+            } catch {
+                completion(.failure(error))
+            }
+        }.resume()
+    }
+
+    func downloadAndOpenInstaller(from pkgURLString: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let pkgURL = URL(string: pkgURLString) else {
+            completion(.failure(NSError(domain: "UpdateManager", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Invalid package URL."
+            ])))
+            return
+        }
+
+        let request = URLRequest(url: pkgURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 300)
+
+        URLSession.shared.downloadTask(with: request) { tempURL, _, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+
+            guard let tempURL = tempURL else {
+                completion(.failure(NSError(domain: "UpdateManager", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey: "Downloaded package file is missing."
+                ])))
+                return
+            }
+
+            let fileManager = FileManager.default
+            let destinationURL = fileManager.temporaryDirectory.appendingPathComponent(pkgURL.lastPathComponent)
+
+            do {
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.moveItem(at: tempURL, to: destinationURL)
+
+                DispatchQueue.main.async {
+                    NSWorkspace.shared.open(destinationURL)
+                    completion(.success(()))
+                }
+            } catch {
+                completion(.failure(error))
+            }
+        }.resume()
+    }
+
+    private static func isRemoteNewer(remoteVersion: String, remoteBuild: String, localVersion: String, localBuild: String) -> Bool {
+        let versionComparison = remoteVersion.compare(localVersion, options: .numeric)
+
+        if versionComparison == .orderedDescending {
+            return true
+        }
+
+        if versionComparison == .orderedAscending {
+            return false
+        }
+
+        let remoteBuildInt = Int(remoteBuild) ?? 0
+        let localBuildInt = Int(localBuild) ?? 0
+        return remoteBuildInt > localBuildInt
+    }
+}
+
 // MARK: - AppDelegate (Menu bar app)
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpdaterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let scheduler = RelaxScheduler()
+    private let updateManager = UpdateManager()
 
-    // Keep menus/items so we can update checkmarks and titles
     private let menu = NSMenu()
 
     private let intervalMenuItem = NSMenuItem(title: "Set Count Down", action: nil, keyEquivalent: "")
@@ -65,20 +166,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     private let resetItem = NSMenuItem(title: "Reset", action: nil, keyEquivalent: "")
     private let showNowItem = NSMenuItem(title: "Relax Now", action: nil, keyEquivalent: "")
 
-    private let updateItem = NSMenuItem(title: "Latest", action: nil, keyEquivalent: "")
+    private let updateItem = NSMenuItem(title: "Update", action: nil, keyEquivalent: "")
+    private let versionItem = NSMenuItem(title: "Version", action: nil, keyEquivalent: "")
 
     private let quitItem = NSMenuItem(title: "Quit", action: nil, keyEquivalent: "")
 
     private var wasPausedByLockEvent: Bool = false
-
-    private lazy var updaterController = SPUStandardUpdaterController(
-        startingUpdater: false,
-        updaterDelegate: self,
-        userDriverDelegate: nil
-    )
-
-    private var updateProbeTimer: Timer?
-    private var updateAvailable: Bool = false
+    private var isUpdating: Bool = false
 
     func menuWillOpen(_ menu: NSMenu) {
         refreshCheckmarks()
@@ -88,7 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem === resetItem { return !scheduler.isPaused }
         if menuItem === showNowItem { return !scheduler.isPaused }
-        if menuItem === updateItem { return updateAvailable }
+        if menuItem === versionItem { return false }
+        if menuItem === updateItem { return !isUpdating }
         return true
     }
 
@@ -107,11 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         }
 
         scheduler.start()
-
-        _ = updaterController
-        try? updaterController.updater.start()
-
-        startAutoUpdateChecks()
     }
 
     // MARK: - Status Item
@@ -178,10 +268,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         showNowItem.action = #selector(showNow(_:))
 
         updateItem.target = self
-        updateItem.action = #selector(updateNow(_:))
-        updateItem.title = "Latest"
-        updateItem.isEnabled = false
-        updateAvailable = false
+        updateItem.action = #selector(checkForUpdate(_:))
+        updateItem.title = "Update"
+        updateItem.isEnabled = true
+
+        versionItem.target = nil
+        versionItem.action = nil
+        versionItem.title = "Version: \(appVersionString())"
+        versionItem.isEnabled = false
 
         quitItem.target = self
         quitItem.action = #selector(quitApp(_:))
@@ -199,13 +293,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         menu.addItem(showNowItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(updateItem)
+        menu.addItem(versionItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(quitItem)
 
         refreshCheckmarks()
         refreshPauseResumeTitle()
         refreshEnabledStates()
-        refreshUpdateUI()
+    }
+
+    private func appVersionString() -> String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
+    private func showAlert(title: String, message: String, style: NSAlert.Style = .informational) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.alertStyle = style
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
+    }
+
+    private func askInstallUpdate(version: String, pkgURL: String) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Update Available"
+            alert.informativeText = "Version \(version) is available. Download and install now?"
+            alert.addButton(withTitle: "Install")
+            alert.addButton(withTitle: "Cancel")
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                self.startDownloadAndInstall(pkgURL: pkgURL)
+            } else {
+                self.isUpdating = false
+                self.updateItem.title = "Update"
+                self.menu.update()
+            }
+        }
+    }
+
+    private func startDownloadAndInstall(pkgURL: String) {
+        DispatchQueue.main.async {
+            self.updateItem.title = "Downloading..."
+            self.menu.update()
+        }
+
+        updateManager.downloadAndOpenInstaller(from: pkgURL) { [weak self] result in
+            guard let self = self else { return }
+
+            DispatchQueue.main.async {
+                self.isUpdating = false
+                self.updateItem.title = "Update"
+                self.menu.update()
+            }
+
+            switch result {
+            case .success:
+                self.showAlert(
+                    title: "Installer Opened",
+                    message: "The installer has been opened. Follow the installer steps to complete the update."
+                )
+            case .failure(let error):
+                self.showAlert(
+                    title: "Update Failed",
+                    message: error.localizedDescription,
+                    style: .warning
+                )
+            }
+        }
     }
 
     private func refreshCheckmarks() {
@@ -237,17 +397,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
     private func refreshEnabledStates() {
         resetItem.isEnabled = !scheduler.isPaused
         showNowItem.isEnabled = !scheduler.isPaused
-    }
-
-    private func refreshUpdateUI() {
-        if updateAvailable {
-            updateItem.title = "Update Now"
-            updateItem.isEnabled = true
-        } else {
-            updateItem.title = "Latest"
-            updateItem.isEnabled = false
-        }
-        menu.update()
     }
 
     // MARK: - Menu actions
@@ -292,55 +441,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, SPUUpd
         scheduler.showNow()
     }
 
-    @objc private func updateNow(_ sender: NSMenuItem) {
-        updaterController.updater.checkForUpdates()
+    @objc private func checkForUpdate(_ sender: NSMenuItem) {
+        if isUpdating { return }
+
+        isUpdating = true
+        updateItem.title = "Checking..."
+        menu.update()
+
+        updateManager.checkForUpdate { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let releaseInfo):
+                if let releaseInfo = releaseInfo {
+                    self.askInstallUpdate(version: releaseInfo.version, pkgURL: releaseInfo.pkg_url)
+                } else {
+                    DispatchQueue.main.async {
+                        self.isUpdating = false
+                        self.updateItem.title = "Update"
+                        self.menu.update()
+                        self.showAlert(title: "No Available Update", message: "You are already using the latest version.")
+                    }
+                }
+
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    self.isUpdating = false
+                    self.updateItem.title = "Update"
+                    self.menu.update()
+                    self.showAlert(title: "Update Check Failed", message: error.localizedDescription, style: .warning)
+                }
+            }
+        }
     }
 
     @objc private func quitApp(_ sender: NSMenuItem) {
         NSApp.terminate(nil)
-    }
-
-    // MARK: - Auto update checks (silent)
-
-    private func startAutoUpdateChecks() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.probeForUpdateSilently()
-        }
-
-        updateProbeTimer?.invalidate()
-        updateProbeTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
-            self?.probeForUpdateSilently()
-        }
-        if let t = updateProbeTimer {
-            RunLoop.main.add(t, forMode: .common)
-        }
-    }
-
-    private func probeForUpdateSilently() {
-        updaterController.updater.checkForUpdatesInBackground()
-    }
-
-    // MARK: - Sparkle delegate
-
-    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        updateAvailable = true
-        DispatchQueue.main.async { [weak self] in
-            self?.refreshUpdateUI()
-        }
-    }
-
-    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
-        updateAvailable = false
-        DispatchQueue.main.async { [weak self] in
-            self?.refreshUpdateUI()
-        }
-    }
-
-    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        updateAvailable = false
-        DispatchQueue.main.async { [weak self] in
-            self?.refreshUpdateUI()
-        }
     }
 
     // MARK: - Lock / Unlock detection
@@ -535,8 +671,6 @@ final class RelaxScheduler {
         showOverlayThenRestart()
     }
 
-    // MARK: - Tick
-
     private func tick() {
         if isPaused { return }
 
@@ -560,8 +694,6 @@ final class RelaxScheduler {
         timer?.invalidate()
         timer = nil
     }
-
-    // MARK: - Overlay behavior
 
     private func cancelOverlayWork() {
         requestFadeWorkItem?.cancel()
@@ -649,8 +781,6 @@ final class RelaxScheduler {
         overlayWindows.removeAll()
     }
 }
-
-// MARK: - Overlay View
 
 struct RelaxOverlayView: View {
 

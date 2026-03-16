@@ -21,7 +21,6 @@ jobs:
     env:
       APP_NAME: RelaxTimer
       SCHEME: RelaxTimer
-      SPARKLE_VERSION: 2.9.0
 
     steps:
       - name: Checkout repository
@@ -41,44 +40,43 @@ jobs:
             -derivedDataPath build \
             build
 
-      - name: Setup Sparkle tools
+      - name: Read build number from built app
         run: |
-          mkdir -p .action/sparkle
-          cd .action/sparkle
-          curl -L "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-for-Swift-Package-Manager.zip" -o sparkle.zip
-          unzip -q sparkle.zip
-          echo "$(pwd)/bin" >> "$GITHUB_PATH"
+          BUILD_NUMBER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "build/Build/Products/Release/$APP_NAME.app/Contents/Info.plist")
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Export Sparkle private key to file
-        run: |
-          cat > "$RUNNER_TEMP/sparkle_private_key.pem" <<'EOF'
-          ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          EOF
-          echo "SPARKLE_PRIVATE_KEY_FILE=$RUNNER_TEMP/sparkle_private_key.pem" >> "$GITHUB_ENV"
-
-      - name: Create update archive
+      - name: Prepare release folder
         run: |
           mkdir -p updates
-          ditto -c -k --sequesterRsrc --keepParent \
-            "build/Build/Products/Release/$APP_NAME.app" \
-            "updates/$APP_NAME-$VERSION.zip"
+          cp -R "build/Build/Products/Release/$APP_NAME.app" "./$APP_NAME.app"
 
-      - name: Generate appcast
+      - name: Build installer package
         run: |
-          generate_appcast \
-            --ed-key-file "$SPARKLE_PRIVATE_KEY_FILE" \
-            updates
+          pkgbuild \
+            --component "./$APP_NAME.app" \
+            --install-location "/Applications" \
+            "updates/$APP_NAME-$VERSION.pkg"
+
+      - name: Create latest.json
+        run: |
+          cat > "updates/latest.json" <<EOF
+          {
+            "version": "$VERSION",
+            "build": "$BUILD_NUMBER",
+            "pkg_url": "https://yongmingfan.github.io/RelaxTimer/$APP_NAME-$VERSION.pkg"
+          }
+          EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: updates/*.zip
+          files: updates/*.pkg
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: updates
 
