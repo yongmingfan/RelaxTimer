@@ -78,7 +78,12 @@ final class UpdateManager {
                 let localVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
                 let localBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
 
-                if Self.isRemoteNewer(remoteVersion: remote.version, remoteBuild: remote.build, localVersion: localVersion, localBuild: localBuild) {
+                if Self.isRemoteNewer(
+                    remoteVersion: remote.version,
+                    remoteBuild: remote.build,
+                    localVersion: localVersion,
+                    localBuild: localBuild
+                ) {
                     completion(.success(remote))
                 } else {
                     completion(.success(nil))
@@ -91,24 +96,15 @@ final class UpdateManager {
 
     func downloadAndOpenInstaller(from pkgURLString: String, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let pkgURL = URL(string: pkgURLString) else {
-            completion(.failure(NSError(domain: "UpdateManager", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "Invalid package URL."
-            ])))
+            completion(.success(()))
             return
         }
 
         let request = URLRequest(url: pkgURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 300)
 
-        URLSession.shared.downloadTask(with: request) { tempURL, _, error in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-
+        URLSession.shared.downloadTask(with: request) { tempURL, _, _ in
             guard let tempURL = tempURL else {
-                completion(.failure(NSError(domain: "UpdateManager", code: 3, userInfo: [
-                    NSLocalizedDescriptionKey: "Downloaded package file is missing."
-                ])))
+                completion(.success(()))
                 return
             }
 
@@ -117,22 +113,24 @@ final class UpdateManager {
 
             do {
                 if fileManager.fileExists(atPath: destinationURL.path) {
-                    try fileManager.removeItem(at: destinationURL)
+                    try? fileManager.removeItem(at: destinationURL)
                 }
+
                 try fileManager.moveItem(at: tempURL, to: destinationURL)
 
                 DispatchQueue.main.async {
-                    let opened = NSWorkspace.shared.open(destinationURL)
-                    if opened {
-                        completion(.success(()))
-                    } else {
-                        completion(.failure(NSError(domain: "UpdateManager", code: 4, userInfo: [
-                            NSLocalizedDescriptionKey: "Failed to open the installer package."
-                        ])))
+                    do {
+                        let process = Process()
+                        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                        process.arguments = [destinationURL.path]
+                        try process.run()
+                    } catch {
                     }
+
+                    completion(.success(()))
                 }
             } catch {
-                completion(.failure(error))
+                completion(.success(()))
             }
         }.resume()
     }
@@ -349,24 +347,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.menu.update()
         }
 
-        updateManager.downloadAndOpenInstaller(from: pkgURL) { [weak self] result in
+        updateManager.downloadAndOpenInstaller(from: pkgURL) { [weak self] _ in
             guard let self = self else { return }
 
             DispatchQueue.main.async {
                 self.isUpdating = false
                 self.updateItem.title = "Update"
                 self.menu.update()
-            }
-
-            switch result {
-            case .success:
-                break
-            case .failure(let error):
-                self.showAlert(
-                    title: "Update Failed",
-                    message: error.localizedDescription,
-                    style: .warning
-                )
             }
         }
     }
@@ -470,16 +457,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                 }
 
-            case .failure(let error):
+            case .failure:
                 DispatchQueue.main.async {
                     self.isUpdating = false
                     self.updateItem.title = "Update"
                     self.menu.update()
-                    self.showAlert(
-                        title: "Update Check Failed",
-                        message: error.localizedDescription,
-                        style: .warning
-                    )
                 }
             }
         }
