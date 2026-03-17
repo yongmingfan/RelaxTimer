@@ -850,7 +850,7 @@ struct RelaxOverlayView: View {
                     Button {
                         onQuitRelax()
                     } label: {
-                        Text("End break")
+                        Text("End Break")
                             .font(.system(size: buttonSize, weight: .semibold))
                             .padding(.horizontal, 26)
                             .padding(.vertical, 14)
