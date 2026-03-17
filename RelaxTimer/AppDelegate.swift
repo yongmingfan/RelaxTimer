@@ -122,8 +122,14 @@ final class UpdateManager {
                 try fileManager.moveItem(at: tempURL, to: destinationURL)
 
                 DispatchQueue.main.async {
-                    NSWorkspace.shared.open(destinationURL)
-                    completion(.success(()))
+                    let opened = NSWorkspace.shared.open(destinationURL)
+                    if opened {
+                        completion(.success(()))
+                    } else {
+                        completion(.failure(NSError(domain: "UpdateManager", code: 4, userInfo: [
+                            NSLocalizedDescriptionKey: "Failed to open the installer package."
+                        ])))
+                    }
                 }
             } catch {
                 completion(.failure(error))
@@ -354,10 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             switch result {
             case .success:
-                self.showAlert(
-                    title: "Installer Opened",
-                    message: "The installer has been opened. Follow the installer steps to complete the update."
-                )
+                break
             case .failure(let error):
                 self.showAlert(
                     title: "Update Failed",
@@ -460,7 +463,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         self.isUpdating = false
                         self.updateItem.title = "Update"
                         self.menu.update()
-                        self.showAlert(title: "No Available Update", message: "You are already using the latest version.")
+                        self.showAlert(
+                            title: "No Available Update",
+                            message: "You are already using the latest version."
+                        )
                     }
                 }
 
@@ -469,7 +475,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.isUpdating = false
                     self.updateItem.title = "Update"
                     self.menu.update()
-                    self.showAlert(title: "Update Check Failed", message: error.localizedDescription, style: .warning)
+                    self.showAlert(
+                        title: "Update Check Failed",
+                        message: error.localizedDescription,
+                        style: .warning
+                    )
                 }
             }
         }

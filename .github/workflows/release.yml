@@ -50,11 +50,27 @@ jobs:
           mkdir -p updates
           cp -R "build/Build/Products/Release/$APP_NAME.app" "./$APP_NAME.app"
 
+      - name: Create installer scripts
+        run: |
+          mkdir -p pkg-scripts
+          cat > pkg-scripts/postinstall <<'EOF'
+          #!/bin/bash
+          APP_NAME="RelaxTimer"
+
+          /usr/bin/pkill -x "$APP_NAME" || true
+          /bin/sleep 2
+          /usr/bin/open "/Applications/$APP_NAME.app" || true
+
+          exit 0
+          EOF
+          chmod +x pkg-scripts/postinstall
+
       - name: Build installer package
         run: |
           pkgbuild \
             --component "./$APP_NAME.app" \
             --install-location "/Applications" \
+            --scripts "pkg-scripts" \
             "updates/$APP_NAME-$VERSION.pkg"
 
       - name: Create latest.json
