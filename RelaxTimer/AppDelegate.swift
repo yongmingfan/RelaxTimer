@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import ServiceManagement
 
 enum RelaxColorPreset: Int, CaseIterable {
     case currentDark = 0
@@ -192,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        enableLaunchAtLogin()
         setupStatusItem()
         setupMenu()
         observeLockEvents()
@@ -206,6 +208,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         scheduler.start()
+    }
+
+    private func enableLaunchAtLogin() {
+        if #available(macOS 13.0, *) {
+            do {
+                try SMAppService.mainApp.register()
+            } catch {
+            }
+        }
     }
 
     // MARK: - Status Item
